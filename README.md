@@ -54,7 +54,7 @@ npx tandoor-mcp
 - `list_recipes` - List ALL recipes (auto-paginated). Filters: `query`, `keywords` (IDs), `rating_gte`, `sort_order`. Returns compact rows (id, name, keywords, servings)
 - `get_recipe` - Get recipe details as a compact summary (steps with ingredients as text lines)
 - `create_recipe` - Add new recipes. Food/unit/keyword names are auto-resolved to existing records when possible (normalized matching incl. Spanish singular/plural variants). Response reports any new records created so the caller can spot duplicates. Recipes are created visible in the UI (`internal: false`)
-- `update_recipe` - Update metadata and/or content. **Providing `steps` replaces the whole steps array** — include every step
+- `update_recipe` - Update metadata and/or content. **Providing `steps` replaces the whole steps array** — include every step. `nutrition` (calories, carbohydrates, fats, proteins, source) is merged field-by-field — omitted values keep their current number; `nutrition: null` clears it
 - `delete_recipe` - Permanently delete a recipe
 - `list_foods` - List foods (optional `query` filter) — use before creating recipes to reuse existing foods
 - `list_units` - List units (optional `query` filter)

@@ -168,6 +168,33 @@ try {
   check('update_recipe replaces steps array', updated.recipe.steps.length === 1 && updated.recipe.steps[0].name === 'Solo un paso',
     `steps=${updated.recipe.steps.length}`);
   check('update_recipe keeps internal=false', updated.recipe.internal === false);
+  check('update_recipe no nutrition before set', updated.recipe.nutrition === null);
+
+  // --- update_recipe: nutrition editing ---
+  const nutriSet = await call(client, 'update_recipe', {
+    id: rid,
+    nutrition: { calories: 250, carbohydrates: 10, fats: 12, proteins: 28 },
+  });
+  check('update_recipe sets nutrition', nutriSet.recipe.nutrition?.calories === 250
+    && nutriSet.recipe.nutrition?.proteins === 28, JSON.stringify(nutriSet.recipe.nutrition));
+
+  // partial update merges with existing values (Tandoor requires all 4 numbers)
+  const nutriPartial = await call(client, 'update_recipe', {
+    id: rid,
+    nutrition: { calories: 300 },
+  });
+  check('update_recipe partial nutrition merge', nutriPartial.recipe.nutrition?.calories === 300
+    && nutriPartial.recipe.nutrition?.proteins === 28
+    && nutriPartial.recipe.nutrition?.carbohydrates === 10,
+    JSON.stringify(nutriPartial.recipe.nutrition));
+
+  // get_recipe round-trips nutrition
+  const fetchedWithNutri = await call(client, 'get_recipe', { id: rid });
+  check('get_recipe shows nutrition', fetchedWithNutri.nutrition?.calories === 300);
+
+  // nutrition: null clears it
+  const nutriCleared = await call(client, 'update_recipe', { id: rid, nutrition: null });
+  check('update_recipe clears nutrition', nutriCleared.recipe.nutrition === null);
 
   // --- meal plan lifecycle ---
   const mealTypes = await call(client, 'list_meal_types');

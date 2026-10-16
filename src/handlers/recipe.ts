@@ -36,6 +36,15 @@ function summarizeRecipe(recipe: any): any {
     working_time: recipe.working_time ?? 0,
     waiting_time: recipe.waiting_time ?? 0,
     source_url: recipe.source_url ?? null,
+    nutrition: recipe.nutrition
+      ? {
+          calories: recipe.nutrition.calories ?? null,
+          carbohydrates: recipe.nutrition.carbohydrates ?? null,
+          fats: recipe.nutrition.fats ?? null,
+          proteins: recipe.nutrition.proteins ?? null,
+          source: recipe.nutrition.source ?? null,
+        }
+      : null,
     steps: (recipe.steps || []).map((s: any) => ({
       name: s.name || '',
       instruction: s.instruction || '',
@@ -241,6 +250,24 @@ export async function handleUpdateRecipe(
     const keywordsResult = await processKeywords(client, updateData.keywords);
     updates.keywords = keywordsResult.keywords;
     createdKeywords = keywordsResult.createdKeywords;
+  }
+
+  // Process nutrition if provided. Tandoor's nested NutritionInformation
+  // serializer requires calories/carbohydrates/fats/proteins together, so a
+  // partial object is merged over the recipe's existing values (missing fields
+  // fall back to 0 when the recipe has no nutrition yet).
+  if (updateData.nutrition === null) {
+    updates.nutrition = null;
+  } else if (updateData.nutrition !== undefined) {
+    const n = updateData.nutrition;
+    const existing = (await client.recipes.getRecipe(id)).nutrition;
+    updates.nutrition = {
+      calories: n.calories ?? existing?.calories ?? 0,
+      carbohydrates: n.carbohydrates ?? existing?.carbohydrates ?? 0,
+      fats: n.fats ?? existing?.fats ?? 0,
+      proteins: n.proteins ?? existing?.proteins ?? 0,
+      source: n.source !== undefined ? n.source : existing?.source ?? undefined,
+    };
   }
 
   const updated = await client.recipes.patchRecipe(id, updates);
