@@ -74,7 +74,7 @@ export const RECIPE_TOOLS: Tool[] = [
   },
   {
     name: 'update_recipe',
-    description: 'Update recipe metadata and content. Only provide fields you want to update. All fields optional except id. NOTE: if steps is provided, it REPLACES the entire steps array — include every step. Response includes the compact updated recipe.',
+    description: 'Update recipe metadata and content. Only provide fields you want to update. All fields optional except id. NOTE: if steps is provided, it REPLACES the entire steps array — include every step. Nutrition values are per serving; omitted nutrition fields keep their current value (send nutrition: null to clear). Response includes the compact updated recipe.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -86,6 +86,22 @@ export const RECIPE_TOOLS: Tool[] = [
         working_time: { type: 'number', description: 'Active working time in minutes' },
         waiting_time: { type: 'number', description: 'Passive waiting time in minutes' },
         keywords: { type: 'array', items: { type: 'string' }, description: 'Tags/keywords for the recipe (names, auto-resolved)' },
+        nutrition: {
+          description: 'Nutrition information per serving. Only provide the fields you want to change — omitted fields keep their current value (or 0 if the recipe has no nutrition yet). Set to null to remove all nutrition info.',
+          oneOf: [
+            {
+              type: 'object',
+              properties: {
+                calories: { type: 'number', description: 'Calories per serving (kcal)' },
+                carbohydrates: { type: 'number', description: 'Carbohydrates per serving (g)' },
+                fats: { type: 'number', description: 'Fats per serving (g)' },
+                proteins: { type: 'number', description: 'Proteins per serving (g)' },
+                source: { type: ['string', 'null'], description: 'Source of the nutrition data' },
+              },
+            },
+            { type: 'null' },
+          ],
+        },
         internal: { type: 'boolean', description: 'Hide from the default UI recipe list (default false)' },
         show_ingredient_overview: { type: 'boolean', description: 'Show ingredient overview' },
         steps: {
