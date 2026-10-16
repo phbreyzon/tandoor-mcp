@@ -18,7 +18,7 @@ export const RECIPE_TOOLS: Tool[] = [
   },
   {
     name: 'get_recipe',
-    description: 'Get recipe details by ID. Returns a compact summary (name, servings, keywords, steps with ingredients as text lines) — not the full raw JSON.',
+    description: 'Get recipe details by ID. Returns a compact summary (name, servings, keywords, steps with ingredients as text lines, plus nutrition: calories, carbohydrates, fats, proteins, source) — not the full raw JSON.',
     inputSchema: {
       type: 'object',
       properties: {
