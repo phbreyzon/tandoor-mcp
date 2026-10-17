@@ -18,7 +18,7 @@ export const RECIPE_TOOLS: Tool[] = [
   },
   {
     name: 'get_recipe',
-    description: 'Get recipe details by ID. Returns a compact summary (name, servings, keywords, steps with ingredients as text lines) — not the full raw JSON.',
+    description: 'Get recipe details by ID. Returns a compact summary (name, servings, keywords, steps with ingredients as text lines, plus nutrition: calories, carbohydrates, fats, proteins, source). Nutrition is read from Tandoor\'s `nutrition` field or, when empty, from the recipe Properties that the UI displays.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -74,7 +74,7 @@ export const RECIPE_TOOLS: Tool[] = [
   },
   {
     name: 'update_recipe',
-    description: 'Update recipe metadata and content. Only provide fields you want to update. All fields optional except id. NOTE: if steps is provided, it REPLACES the entire steps array — include every step. Nutrition values are per serving; omitted nutrition fields keep their current value (send nutrition: null to clear). Response includes the compact updated recipe.',
+    description: 'Update recipe metadata and content. Only provide fields you want to update. All fields optional except id. NOTE: if steps is provided, it REPLACES the entire steps array — include every step. Nutrition values are per serving; they are written both to Tandoor\'s `nutrition` field and to the recipe Properties (Calories/Proteins/Fats/Carbohydrates) so they appear in the Tandoor UI. Omitted nutrition fields keep their current value (send nutrition: null to clear). Response includes the compact updated recipe.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -87,7 +87,7 @@ export const RECIPE_TOOLS: Tool[] = [
         waiting_time: { type: 'number', description: 'Passive waiting time in minutes' },
         keywords: { type: 'array', items: { type: 'string' }, description: 'Tags/keywords for the recipe (names, auto-resolved)' },
         nutrition: {
-          description: 'Nutrition information per serving. Only provide the fields you want to change — omitted fields keep their current value (or 0 if the recipe has no nutrition yet). Set to null to remove all nutrition info.',
+          description: 'Nutrition information per serving. Written to Tandoor\'s legacy `nutrition` field AND to recipe Properties (Calories/Proteins/Fats/Carbohydrates), which is what the current Tandoor UI displays. Only provide the fields you want to change — omitted fields keep their current value (or 0 if the recipe has no nutrition yet). Set to null to remove all nutrition info.',
           oneOf: [
             {
               type: 'object',
