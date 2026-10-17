@@ -34,6 +34,60 @@ import {
 // Load environment variables
 dotenv.config();
 
+const ALL_TOOLS = [...RECIPE_TOOLS, ...MEAL_PLAN_TOOLS];
+
+/**
+ * Some MCP clients/models serialize nested object or array arguments as a JSON
+ * *string* (e.g. `nutrition: "{\"calories\":305}"` instead of an object). The
+ * handlers expect real objects/arrays, so a stringified value silently no-ops
+ * (or worse, iterates its characters). Coerce any argument whose schema expects
+ * an object/array back into parsed JSON before dispatching.
+ */
+function schemaExpectsObjectOrArray(schema: any): boolean {
+  if (!schema) return false;
+  const isObjArr = (t: any) =>
+    t === 'object' ||
+    t === 'array' ||
+    (Array.isArray(t) && (t.includes('object') || t.includes('array')));
+  if (isObjArr(schema.type)) return true;
+  for (const key of ['oneOf', 'anyOf', 'allOf']) {
+    if (Array.isArray(schema[key]) && schema[key].some(schemaExpectsObjectOrArray)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function coerceJsonArgs(value: any, schema: any): any {
+  if (value === null || value === undefined) return value;
+
+  if (typeof value === 'string') {
+    if (!schemaExpectsObjectOrArray(schema)) return value;
+    try {
+      return coerceJsonArgs(JSON.parse(value), schema);
+    } catch {
+      return value;
+    }
+  }
+
+  if (Array.isArray(value)) {
+    const itemSchema = schema?.items;
+    return value.map(v => coerceJsonArgs(v, itemSchema));
+  }
+
+  if (typeof value === 'object') {
+    const props = schema?.properties;
+    if (!props) return value;
+    const out: Record<string, any> = { ...value };
+    for (const key of Object.keys(out)) {
+      out[key] = coerceJsonArgs(out[key], props[key]);
+    }
+    return out;
+  }
+
+  return value;
+}
+
 const TANDOOR_URL = process.env.TANDOOR_URL;
 const TANDOOR_TOKEN = process.env.TANDOOR_TOKEN;
 
@@ -64,13 +118,15 @@ const server = new Server(
 // Handle tool listing
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
-    tools: [...RECIPE_TOOLS, ...MEAL_PLAN_TOOLS],
+    tools: ALL_TOOLS,
   };
 });
 
 // Handle tool execution
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
+  const { name, arguments: rawArgs } = request.params;
+  const schema = ALL_TOOLS.find(t => t.name === name)?.inputSchema;
+  const args = coerceJsonArgs(rawArgs, schema);
 
   try {
     let text: string;
