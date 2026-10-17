@@ -86,17 +86,20 @@ export interface NutritionInformation {
   source?: string;
 }
 
+export interface PropertyType {
+  id: number;
+  name: string;
+  unit?: string | null;
+  description?: string | null;
+  order?: number;
+  open_data_slug?: string | null;
+  fdc_id?: number | null;
+}
+
 export interface Property {
   id?: number;
-  name: string;
-  property_amount: number;
-  property_type: {
-    id: number;
-    name: string;
-    unit: string;
-    order: number;
-    fdc_id?: string;
-  };
+  property_amount: number | null;
+  property_type: PropertyType;
 }
 
 export interface Recipe {

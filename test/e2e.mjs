@@ -66,6 +66,7 @@ const transport = new StdioClientTransport({
 const client = new Client({ name: 'tandoor-mcp-e2e', version: '1.0.0' });
 const createdRecipeId = [];
 const createdMealPlanIds = [];
+const createdPropertyIds = [];
 
 try {
   console.log('Connecting to server...');
@@ -178,6 +179,25 @@ try {
   check('update_recipe sets nutrition', nutriSet.recipe.nutrition?.calories === 250
     && nutriSet.recipe.nutrition?.proteins === 28, JSON.stringify(nutriSet.recipe.nutrition));
 
+  // Nutrition must also be mirrored into recipe Properties, which is what the
+  // Tandoor UI renders (the legacy `nutrition` field is not shown in the UI).
+  const rawAfterNutri = await fetch(`${url}/api/recipe/${rid}/`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then(r => r.json());
+  for (const p of rawAfterNutri.properties || []) {
+    if (['Calories', 'Proteins', 'Fats', 'Carbohydrates'].includes(p.property_type?.name)) {
+      createdPropertyIds.push(p.id);
+    }
+  }
+  const nutrientProps = (rawAfterNutri.properties || [])
+    .filter(p => ['Calories', 'Proteins', 'Fats', 'Carbohydrates'].includes(p.property_type?.name))
+    .map(p => ({ name: p.property_type.name, amount: p.property_amount }));
+  check('update_recipe mirrors nutrition into UI Properties',
+    nutrientProps.length === 4
+    && nutrientProps.find(p => p.name === 'Calories')?.amount === 250
+    && nutrientProps.find(p => p.name === 'Proteins')?.amount === 28,
+    JSON.stringify(nutrientProps));
+
   // partial update merges with existing values (Tandoor requires all 4 numbers)
   const nutriPartial = await call(client, 'update_recipe', {
     id: rid,
@@ -192,9 +212,16 @@ try {
   const fetchedWithNutri = await call(client, 'get_recipe', { id: rid });
   check('get_recipe shows nutrition', fetchedWithNutri.nutrition?.calories === 300);
 
-  // nutrition: null clears it
+  // nutrition: null clears it (both legacy field and Properties)
   const nutriCleared = await call(client, 'update_recipe', { id: rid, nutrition: null });
   check('update_recipe clears nutrition', nutriCleared.recipe.nutrition === null);
+  const rawAfterClear = await fetch(`${url}/api/recipe/${rid}/`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then(r => r.json());
+  check('update_recipe clears UI Properties too',
+    (rawAfterClear.properties || []).filter(p =>
+      ['Calories', 'Proteins', 'Fats', 'Carbohydrates'].includes(p.property_type?.name)).length === 0,
+    JSON.stringify((rawAfterClear.properties || []).map(p => p.property_type?.name)));
 
   // --- meal plan lifecycle ---
   const mealTypes = await call(client, 'list_meal_types');
@@ -274,6 +301,16 @@ try {
   }
   for (const id of createdRecipeId) {
     try { await call(client, 'delete_recipe', { id }); } catch { /* ignore */ }
+  }
+  // Recipe Properties are a M2M and are NOT removed when a recipe is deleted,
+  // so clean up the rows this test created to leave the DB as found.
+  for (const id of createdPropertyIds) {
+    try {
+      await fetch(`${url}/api/property/${id}/`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch { /* ignore */ }
   }
   await client.close();
   serverProc.kill();

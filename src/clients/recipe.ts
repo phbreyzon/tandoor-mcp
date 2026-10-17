@@ -7,6 +7,7 @@ import {
   KeywordOverview,
   FoodOverview,
   UnitOverview,
+  PropertyType,
   FoundRef,
 } from '../types/index.js';
 
@@ -162,6 +163,17 @@ export class RecipeClient extends BaseClient {
       ? `/api/keyword/?query=${encodeURIComponent(query)}`
       : '/api/keyword/';
     return this.listAll<KeywordOverview>(endpoint);
+  }
+
+  /**
+   * List all property types (Calories, Proteins, Fats, Carbohydrates, ...).
+   * Tandoor's current UI renders recipe nutrition from these "Properties",
+   * not from the legacy `nutrition` field, so their IDs are needed to make
+   * nutrition values visible in the UI.
+   */
+  async listPropertyTypes(): Promise<PropertyType[]> {
+    const result = await this.listAll<PropertyType>('/api/property-type/');
+    return result.results;
   }
 
   /**

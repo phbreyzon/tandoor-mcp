@@ -1,7 +1,110 @@
 // Handlers for recipe tools
 
 import { TandoorClient } from '../clients/index.js';
-import { Recipe, Ingredient, Step, FoundRef } from '../types/index.js';
+import { Recipe, Ingredient, Step, PropertyType, FoundRef } from '../types/index.js';
+
+/**
+ * Tandoor's current (Vue) UI does NOT render the legacy `Recipe.nutrition`
+ * field. Recipe nutrition is displayed from the generic "Properties" system:
+ * each nutrient is a Property whose property_type is one of the seeded
+ * PropertyTypes below. We therefore mirror any nutrition update into both the
+ * legacy `nutrition` field (kept for API/back-compat) AND these Properties so
+ * the values actually show up in the UI.
+ *
+ * Match by `open_data_slug` first (stable/language-independent) and fall back
+ * to the English name.
+ */
+const NUTRIENT_PROPERTY_SLUGS: Record<string, string> = {
+  calories: 'property-calories',
+  proteins: 'property-proteins',
+  fats: 'property-fats',
+  carbohydrates: 'property-carbohydrates',
+};
+
+/** Resolve the nutrient PropertyTypes that exist on the server. */
+async function resolveNutrientPropertyTypes(
+  client: TandoorClient
+): Promise<Record<string, PropertyType>> {
+  const types = await client.recipes.listPropertyTypes();
+  const resolved: Record<string, PropertyType> = {};
+  for (const [key, slug] of Object.entries(NUTRIENT_PROPERTY_SLUGS)) {
+    const match =
+      types.find(t => t.open_data_slug === slug) ||
+      types.find(t => (t.name || '').toLowerCase() === key);
+    if (match) resolved[key] = match;
+  }
+  return resolved;
+}
+
+/**
+ * Merge nutrition values into a recipe's existing Property list.
+ *
+ * Tandoor replaces the whole `properties` relation on PATCH, so the caller
+ * must send every property it wants to keep. Existing properties are passed
+ * back verbatim (they carry an `id`, which makes Tandoor update in place
+ * instead of creating duplicates). Nutrition fields not supplied are left
+ * untouched; supplied ones are updated or added.
+ */
+function mergeNutritionProperties(
+  existing: any[],
+  nutrition: Record<string, number | undefined>,
+  nutrientTypes: Record<string, PropertyType>
+): any[] {
+  const result = [...(existing || [])];
+  for (const [key, type] of Object.entries(nutrientTypes)) {
+    const value = nutrition[key];
+    if (value === undefined) continue;
+
+    const existingProp = result.find(p => p?.property_type?.id === type.id);
+    if (existingProp) {
+      existingProp.property_amount = value;
+    } else {
+      result.push({
+        property_amount: value,
+        property_type: { id: type.id, name: type.name, unit: type.unit },
+      });
+    }
+  }
+  return result;
+}
+
+/** Remove the nutrient Properties from a recipe's property list (nutrition: null). */
+function stripNutritionProperties(
+  existing: any[],
+  nutrientTypes: Record<string, PropertyType>
+): any[] {
+  const ids = new Set(Object.values(nutrientTypes).map(t => t.id));
+  return (existing || []).filter(
+    p => p?.property_type?.id == null || !ids.has(p.property_type.id)
+  );
+}
+
+/**
+ * Read nutrition from the UI-visible Properties when the legacy `nutrition`
+ * field is empty (e.g. values set directly through the Tandoor UI).
+ */
+function nutritionFromProperties(properties: any[]): any | null {
+  const bySlugOrName = (p: any, key: string) => {
+    const slug = p?.property_type?.open_data_slug;
+    return slug === NUTRIENT_PROPERTY_SLUGS[key] ||
+      (p?.property_type?.name || '').toLowerCase() === key;
+  };
+  const pick = (key: string) => {
+    const p = (properties || []).find(x => bySlugOrName(x, key));
+    return p?.property_amount ?? null;
+  };
+  const found = ['calories', 'proteins', 'fats', 'carbohydrates'].some(
+    key => (properties || []).some(p => bySlugOrName(p, key))
+  );
+  if (!found) return null;
+  return {
+    calories: pick('calories'),
+    carbohydrates: pick('carbohydrates'),
+    fats: pick('fats'),
+    proteins: pick('proteins'),
+    source: null,
+  };
+}
 
 /** Render an ingredient as a compact human-readable line. */
 function ingredientLine(ing: any): string {
@@ -24,6 +127,7 @@ function ingredientLine(ing: any): string {
  * burns tokens on every call).
  */
 function summarizeRecipe(recipe: any): any {
+  const nutrition = recipe.nutrition ?? nutritionFromProperties(recipe.properties);
   return {
     id: recipe.id,
     name: recipe.name,
@@ -36,13 +140,13 @@ function summarizeRecipe(recipe: any): any {
     working_time: recipe.working_time ?? 0,
     waiting_time: recipe.waiting_time ?? 0,
     source_url: recipe.source_url ?? null,
-    nutrition: recipe.nutrition
+    nutrition: nutrition
       ? {
-          calories: recipe.nutrition.calories ?? null,
-          carbohydrates: recipe.nutrition.carbohydrates ?? null,
-          fats: recipe.nutrition.fats ?? null,
-          proteins: recipe.nutrition.proteins ?? null,
-          source: recipe.nutrition.source ?? null,
+          calories: nutrition.calories ?? null,
+          carbohydrates: nutrition.carbohydrates ?? null,
+          fats: nutrition.fats ?? null,
+          proteins: nutrition.proteins ?? null,
+          source: nutrition.source ?? null,
         }
       : null,
     steps: (recipe.steps || []).map((s: any) => ({
@@ -256,11 +360,20 @@ export async function handleUpdateRecipe(
   // serializer requires calories/carbohydrates/fats/proteins together, so a
   // partial object is merged over the recipe's existing values (missing fields
   // fall back to 0 when the recipe has no nutrition yet).
+  //
+  // Additionally, the values are mirrored into the recipe's Properties
+  // (PropertyType: Calories/Proteins/Fats/Carbohydrates) because the current
+  // Tandoor UI renders nutrition from Properties and IGNORES the legacy
+  // `nutrition` field. Without this, updates never show up in the UI.
   if (updateData.nutrition === null) {
     updates.nutrition = null;
+    const recipe = await client.recipes.getRecipe(id);
+    const nutrientTypes = await resolveNutrientPropertyTypes(client);
+    updates.properties = stripNutritionProperties(recipe.properties || [], nutrientTypes);
   } else if (updateData.nutrition !== undefined) {
     const n = updateData.nutrition;
-    const existing = (await client.recipes.getRecipe(id)).nutrition;
+    const recipe = await client.recipes.getRecipe(id);
+    const existing = recipe.nutrition;
     updates.nutrition = {
       calories: n.calories ?? existing?.calories ?? 0,
       carbohydrates: n.carbohydrates ?? existing?.carbohydrates ?? 0,
@@ -268,6 +381,11 @@ export async function handleUpdateRecipe(
       proteins: n.proteins ?? existing?.proteins ?? 0,
       source: n.source !== undefined ? n.source : existing?.source ?? undefined,
     };
+
+    const nutrientTypes = await resolveNutrientPropertyTypes(client);
+    if (Object.keys(nutrientTypes).length > 0) {
+      updates.properties = mergeNutritionProperties(recipe.properties || [], n, nutrientTypes);
+    }
   }
 
   const updated = await client.recipes.patchRecipe(id, updates);
